@@ -155,6 +155,34 @@ tailwind.config = {
     .bento, .glass-badge, aside nav button { transition: none; }
   }
 
+  /* ============ MÓVIL APP-LIKE ============ */
+  @media (max-width: 1023px) {
+    main { padding-bottom: 7.5rem !important; }
+    .field { font-size: 16px; }
+  }
+  .bottom-nav {
+    background: rgba(10,11,16,0.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 -10px 30px -12px rgba(0,0,0,0.8);
+  }
+  body.light .bottom-nav { background: rgba(255,255,255,0.94); border-top-color: rgba(15,23,42,0.12); box-shadow: 0 -10px 30px -18px rgba(15,23,42,0.35); }
+  .bottom-nav button.active { color: #FF6B00; }
+  .bottom-nav button.active .dotind { opacity: 1; transform: scale(1); }
+  .dotind { width: 4px; height: 4px; border-radius: 99px; background: linear-gradient(135deg,#E11D2A,#FF6B00); opacity: 0; transform: scale(.3); transition: all .25s; }
+  .fab {
+    position: fixed; right: 1rem; z-index: 45; width: 3.6rem; height: 3.6rem; border-radius: 999px;
+    bottom: calc(4.9rem + env(safe-area-inset-bottom));
+    background: linear-gradient(135deg, #E11D2A, #FF6B00); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 14px 34px -10px rgba(225,29,42,0.75); transition: transform .15s;
+  }
+  .fab:active { transform: scale(.92); }
+  .mcard { border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.05); border-radius: 1.1rem; padding: 0.95rem 1rem; }
+  body.light .mcard { border-color: rgba(15,23,42,0.10); background: rgba(15,23,42,0.03); }
+  @media (max-width: 767px) {
+    .modal-panel { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; padding: 1.1rem !important; }
+  }
+
   /* ============ TEMA CLARO ============ */
   body.light { background: #EEF0F4; color: #0F172A; }
   body.light::before {
@@ -322,13 +350,6 @@ tailwind.config = {
           <i data-lucide="plus" class="w-4 h-4"></i><span class="hidden sm:inline">Nueva Operación</span>
         </button>
       </div>
-      <!-- mobile nav -->
-      <div class="lg:hidden flex gap-1 overflow-x-auto px-3 pb-2">
-        <template x-for="item in visibleNav()" :key="'m'+item.id">
-          <button @click="view=item.id" class="px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border border-white/10 text-acero/70"
-                  :class="view===item.id ? 'tab-active' : ''" x-text="item.label"></button>
-        </template>
-      </div>
     </header>
 
     <main class="p-4 lg:p-8 space-y-6">
@@ -444,7 +465,38 @@ tailwind.config = {
               <button @click="openOpModal()" class="btn-primary flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i>Registrar</button>
             </div>
           </div>
-          <div class="overflow-x-auto">
+          <!-- móvil: tarjetas -->
+          <div class="md:hidden space-y-3">
+            <template x-for="o in filteredOps()" :key="'mo'+o.id">
+              <div class="mcard" :class="o.estado==='Anulado' ? 'opacity-50' : ''">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-display font-bold text-white" x-text="o.viajeNo"></span>
+                  <span class="chip" :class="estadoBadge(o.estado)" x-text="o.estado"></span>
+                </div>
+                <p class="text-sm font-semibold" x-text="o.cliente"></p>
+                <p class="text-xs text-acero/50 mt-0.5" x-text="o.contenedor + ' · ' + o.importacion"></p>
+                <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span class="chip bg-white/10 font-display" x-text="o.rotulo || '—'"></span>
+                  <span class="chip" :class="modeBadge(o.modalidad)" x-text="modeLabel(o.modalidad)"></span>
+                  <span x-show="o.retornoVacio" class="chip bg-balance/15 text-balance" x-text="'+' + fmt(o.monto*0.5)"></span>
+                </div>
+                <div class="flex items-end justify-between mt-3">
+                  <div>
+                    <p class="font-display font-bold text-lg leading-none" x-text="fmt(o.monto)"></p>
+                    <p class="text-[0.65rem] text-acero/50 mt-1" x-text="o.fecha + (o.destino ? ' · ' + o.destino : '')"></p>
+                  </div>
+                  <div class="flex gap-2" x-show="o.estado!=='Anulado' && canEdit(o)">
+                    <button @click="editOp(o)" class="p-2.5 rounded-xl bg-white/10 active:scale-90 transition"><i data-lucide="pencil" class="w-4 h-4 text-acero/70"></i></button>
+                    <button @click="anularOp(o)" class="p-2.5 rounded-xl bg-rojo/15 active:scale-90 transition"><i data-lucide="ban" class="w-4 h-4 text-rojo"></i></button>
+                  </div>
+                  <span x-show="o.estado!=='Anulado' && !canEdit(o)" class="text-[0.6rem] text-acero/40 italic">🔒 2h</span>
+                </div>
+              </div>
+            </template>
+            <p x-show="filteredOps().length===0" class="text-center text-acero/40 py-6 text-sm">No hay operaciones registradas.</p>
+          </div>
+          <!-- escritorio: tabla -->
+          <div class="overflow-x-auto hidden md:block">
             <table class="data w-full">
               <thead><tr>
                 <th>Viaje</th><th>Fecha</th><th>Contenedor</th><th>Importación</th><th>Cliente</th><th>Rótulo</th><th>Destino</th><th>Modalidad</th><th>Monto</th><th>Retorno</th><th>Estado</th><th></th>
@@ -474,7 +526,7 @@ tailwind.config = {
             </table>
             <p x-show="filteredOps().length===0" class="text-center text-acero/40 py-8 text-sm">No hay operaciones registradas.</p>
           </div>
-          <div class="hint"><span>💡</span><p><b>Cómo registrar un viaje:</b> presiona <b>“Registrar”</b>, elige la <b>modalidad</b> (Propia = sindicato 3% + RD$1,000 y factura normal · Tercero Recibido Neto = sin factura ni sindicato, el ingreso va al rótulo · Viaje Dado = camión externo, genera factura al cliente y cuenta por pagar al tercero), completa contenedor, importación, cliente, rótulo y monto. Activa <b>“Retorno de Vacío”</b> si aplica y el sistema sumará automáticamente el 50% del flete. Con los botones <b>✏️ editar</b> y <b>🚫 anular</b> gestionas cada fila; lo anulado nunca se borra, queda en el historial.</p></div>
+          <div class="hint hidden md:flex"><span>💡</span><p><b>Cómo registrar un viaje:</b> presiona <b>“Registrar”</b>, elige la <b>modalidad</b> (Propia = sindicato 3% + RD$1,000 y factura normal · Tercero Recibido Neto = sin factura ni sindicato, el ingreso va al rótulo · Viaje Dado = camión externo, genera factura al cliente y cuenta por pagar al tercero), completa contenedor, importación, cliente, rótulo y monto. Activa <b>“Retorno de Vacío”</b> si aplica y el sistema sumará automáticamente el 50% del flete. Con los botones <b>✏️ editar</b> y <b>🚫 anular</b> gestionas cada fila; lo anulado nunca se borra, queda en el historial.</p></div>
           <div class="hidden">
           </div>
         </div>
@@ -607,7 +659,26 @@ tailwind.config = {
                 <button x-show="grp.items.some(o=>o.estado==='Pendiente')" @click="facturarCliente(grp.cliente)" class="btn-ghost flex items-center gap-2"><i data-lucide="receipt" class="w-4 h-4 text-naranja"></i>Marcar Facturado</button>
               </div>
             </div>
-            <div class="overflow-x-auto">
+            <div class="md:hidden space-y-3">
+              <template x-for="o in grp.items" :key="'mf'+o.id">
+                <div class="mcard" :class="o.estado==='Anulado' ? 'opacity-50' : ''">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-display font-bold" x-text="o.viajeNo"></span>
+                    <span class="chip" :class="estadoBadge(o.estado)" x-text="o.estado"></span>
+                  </div>
+                  <p class="text-xs text-acero/50" x-text="o.contenedor + ' · ' + o.importacion"></p>
+                  <div class="flex items-center justify-between mt-2.5">
+                    <p class="font-display font-bold" x-text="fmt(o.monto + (o.retornoVacio ? o.monto*0.5 : 0))"></p>
+                    <div class="flex gap-1.5 flex-wrap justify-end" x-show="o.estado!=='Anulado' && canEdit(o)">
+                      <button x-show="o.estado==='Pendiente'" @click="setEstado(o,'Facturado')" class="chip !py-1.5 !px-3 bg-rojo/15 text-rojo">Facturar</button>
+                      <button x-show="o.estado==='Facturado'" @click="setEstado(o,'Pagado')" class="chip !py-1.5 !px-3 bg-balance/15 text-balance">Cobrar</button>
+                      <button @click="anularOp(o)" class="chip !py-1.5 !px-3 bg-white/10 text-acero/60">Anular</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="overflow-x-auto hidden md:block">
               <table class="data w-full">
                 <thead><tr><th>Viaje</th><th>Contenedor</th><th>Importación</th><th>Monto</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody>
@@ -716,7 +787,23 @@ tailwind.config = {
         <!-- Tabla de gastos -->
         <div class="bento p-5">
           <h3 class="font-display font-bold mb-3">Historial de Gastos</h3>
-          <div class="overflow-x-auto">
+          <div class="md:hidden space-y-3">
+            <template x-for="g in [...expenses].reverse()" :key="'mg'+g.id">
+              <div class="mcard" :class="g.anulado ? 'opacity-40' : ''">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="chip" :class="g.categoria==='Gasoil' ? 'bg-naranja/15 text-naranja' : 'bg-white/10 text-acero/80'" x-text="g.categoria"></span>
+                  <span class="font-display font-bold text-rojo" x-text="fmt(g.monto)"></span>
+                </div>
+                <p class="text-sm font-semibold" x-text="g.descripcion"></p>
+                <p class="text-xs text-acero/50 mt-0.5" x-text="(g.rotulo ? g.rotulo + ' · ' : '') + g.fecha + (g.detalle ? ' · ' + g.detalle : '')"></p>
+                <div class="mt-2 text-right" x-show="!g.anulado && canEdit(g)">
+                  <button @click="anularGasto(g)" class="chip !py-1.5 !px-3 bg-rojo/15 text-rojo">Anular</button>
+                </div>
+              </div>
+            </template>
+            <p x-show="expenses.length===0" class="text-center text-acero/40 py-6 text-sm">Sin gastos aún.</p>
+          </div>
+          <div class="overflow-x-auto hidden md:block">
             <table class="data w-full">
               <thead><tr><th>Fecha</th><th>Categoría</th><th>Rótulo</th><th>Descripción</th><th>Detalle</th><th>Monto</th><th></th></tr></thead>
               <tbody>
@@ -878,6 +965,22 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ================= NAV INFERIOR MÓVIL ================= -->
+<nav class="lg:hidden fixed bottom-0 inset-x-0 z-40 bottom-nav no-print" x-show="session" x-cloak>
+  <div class="flex items-stretch justify-around px-1 pt-1.5" style="padding-bottom: calc(0.45rem + env(safe-area-inset-bottom));">
+    <template x-for="item in visibleNav()" :key="'b'+item.id">
+      <button @click="view=item.id; window.scrollTo({top:0})" class="flex flex-col items-center gap-0.5 px-1.5 py-1 min-w-[3rem] text-acero/50 transition-colors" :class="view===item.id ? 'active' : ''">
+        <i :data-lucide="item.icon" class="w-[1.35rem] h-[1.35rem]"></i>
+        <span class="text-[0.58rem] font-bold tracking-wide" x-text="item.short"></span>
+        <span class="dotind"></span>
+      </button>
+    </template>
+  </div>
+</nav>
+<button @click="openOpModal()" class="lg:hidden fab no-print" x-show="session && view!=='dashboard'" x-cloak title="Nueva Operación">
+  <i data-lucide="plus" class="w-7 h-7"></i>
+</button>
+
 <!-- ================= MODAL: OPERACIÓN ================= -->
 <div x-show="opModal" x-cloak class="modal-bg fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto no-print" style="background: rgba(4,5,8,0.75); backdrop-filter: blur(4px);">
   <div class="bento modal-panel w-full max-w-2xl my-8 p-6" @click.outside="opModal=false">
@@ -998,13 +1101,13 @@ function app() {
     expForm: { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'' },
     opForm: {},
     navItems: [
-      { id:'dashboard', label:'Dashboard', icon:'layout-dashboard' },
-      { id:'ops', label:'Operaciones', icon:'clipboard-list' },
-      { id:'facturas', label:'Facturación', icon:'receipt' },
-      { id:'sindicato', label:'Sindicato', icon:'landmark' },
-      { id:'gastos', label:'Gastos & Gasoil', icon:'fuel' },
-      { id:'reportes', label:'Reportes & Exportar', icon:'download' },
-      { id:'maestros', label:'Clientes & Flota', icon:'database' },
+      { id:'dashboard', label:'Dashboard', short:'Inicio', icon:'layout-dashboard' },
+      { id:'ops', label:'Operaciones', short:'Viajes', icon:'clipboard-list' },
+      { id:'facturas', label:'Facturación', short:'Facturas', icon:'receipt' },
+      { id:'sindicato', label:'Sindicato', short:'Sindicato', icon:'landmark' },
+      { id:'gastos', label:'Gastos & Gasoil', short:'Gastos', icon:'fuel' },
+      { id:'reportes', label:'Reportes & Exportar', short:'Reportes', icon:'download' },
+      { id:'maestros', label:'Clientes & Flota', short:'Flota', icon:'database' },
     ],
 
     // ---------- init / persistence ----------
