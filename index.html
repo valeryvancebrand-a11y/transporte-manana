@@ -100,7 +100,7 @@ tailwind.config = {
       radial-gradient(520px 380px at 12% -6%, rgba(225,29,42,0.14), transparent 65%),
       radial-gradient(640px 420px at 96% 14%, rgba(255,107,0,0.10), transparent 65%),
       radial-gradient(700px 520px at 50% 110%, rgba(225,29,42,0.07), transparent 70%);
-    animation: bgDrift 18s ease-in-out infinite alternate;
+    animation: bgDrift 18s ease-in-out 2 alternate;
   }
   @keyframes bgDrift {
     0%   { transform: translate3d(0,0,0) scale(1); }
@@ -122,7 +122,7 @@ tailwind.config = {
   .btn-primary { position: relative; overflow: hidden; }
   .btn-primary::after { content:''; position:absolute; top:0; left:-80%; width:50%; height:100%;
     background: linear-gradient(105deg, transparent, rgba(255,255,255,0.35), transparent);
-    transform: skewX(-20deg); animation: sheen 4.2s ease-in-out infinite; }
+    transform: skewX(-20deg); animation: sheen 4.2s ease-in-out 4; }
   @keyframes sheen { 0%, 55% { left:-80%; } 75% { left:130%; } 100% { left:130%; } }
   .btn-primary:active, .btn-ghost:active { transform: scale(.97); }
   @keyframes modalPop { from { opacity: 0; transform: translateY(18px) scale(.965); } to { opacity: 1; transform: none; } }
@@ -216,7 +216,7 @@ tailwind.config = {
   #print-root { display: none; }
 </style>
 </head>
-<body class="text-acero antialiased" x-data="app()" x-init="init()">
+<body class="text-acero antialiased" x-data="app()">
 
 <!-- ================= PRINT ROOT (rendered on demand) ================= -->
 <div id="print-root"></div>
@@ -1009,7 +1009,7 @@ function app() {
 
     // ---------- init / persistence ----------
     async init() {
-      this.sb = window.supabase.createClient('https://pmadywhvjwufqcoscmzj.supabase.co', 'sb_publishable_eWiSvrzddzTNMHYfdUkh2Q_OLT1OMgY');
+      if (window.__sbClient) { this.sb = window.__sbClient; } else this.sb = window.__sbClient = window.supabase.createClient('https://pmadywhvjwufqcoscmzj.supabase.co', 'sb_publishable_eWiSvrzddzTNMHYfdUkh2Q_OLT1OMgY');
       this.theme = localStorage.getItem('tm_theme') || 'dark';
       this.applyTheme();
       this.resetOpForm();
