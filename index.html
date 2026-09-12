@@ -1106,9 +1106,14 @@ function app() {
     // ---------- init / persistence ----------
     async init() {
       if (window.__sbClient) { this.sb = window.__sbClient; } else this.sb = window.__sbClient = window.supabase.createClient('https://pmadywhvjwufqcoscmzj.supabase.co', 'sb_publishable_eWiSvrzddzTNMHYfdUkh2Q_OLT1OMgY', {
-        auth: { storage: window.sessionStorage, storageKey: 'tm-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        auth: {
+          persistSession: false, autoRefreshToken: true, detectSessionInUrl: false,
+          storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+        }
       });
-      try { Object.keys(localStorage).forEach(k => { if (k.startsWith('sb-')) localStorage.removeItem(k); }); } catch(e) {}
+      // Borrar cualquier sesión guardada antes (incluida la que el navegador restaura al reabrir pestañas)
+      try { Object.keys(localStorage).forEach(k => { if (k.startsWith('sb-') || k === 'tm-auth') localStorage.removeItem(k); }); } catch(e) {}
+      try { Object.keys(sessionStorage).forEach(k => { if (k.startsWith('sb-') || k === 'tm-auth') sessionStorage.removeItem(k); }); } catch(e) {}
       this.theme = localStorage.getItem('tm_theme') || 'dark';
       this.applyTheme();
       this.resetOpForm();
@@ -1117,8 +1122,9 @@ function app() {
       this.$watch('sindTab', () => this.refreshIcons());
       this.$watch('session', () => this.refreshIcons());
       this.refreshIcons();
-      const { data } = await this.sb.auth.getSession();
-      if (data && data.session) { this.session = data.session; await this.afterLogin(); }
+      // Nunca se entra automáticamente: solo se recuerda el correo para no volver a escribirlo
+      try { this.authForm.email = localStorage.getItem('tm_last_email') || ''; } catch(e) {}
+      this.session = null; this.role = null;
     },
     async login() {
       this.authError = ''; this.authBusy = true;
@@ -1132,6 +1138,7 @@ function app() {
         return;
       }
       this.session = r.data.session; this.authForm.pass = '';
+      try { localStorage.setItem('tm_last_email', this.authForm.email.trim().toLowerCase()); } catch(e) {}
       await this.afterLogin();
     },
     async logout() { await this.sb.auth.signOut(); this.session = null; this.role = null; this.ops = []; this.expenses = []; },
