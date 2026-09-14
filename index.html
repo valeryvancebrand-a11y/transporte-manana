@@ -927,12 +927,24 @@ tailwind.config = {
             <input x-model="newClient" @keydown.enter="addClient()" class="field" placeholder="Nombre del nuevo cliente">
             <button @click="addClient()" class="btn-ghost shrink-0"><i data-lucide="plus" class="w-4 h-4"></i></button>
           </div>
-          <div class="hint !mt-0 mb-3"><span>💡</span><p>Escribe el nombre y presiona <b>Enter</b> o el botón <b>+</b>. El cliente aparecerá de inmediato en el selector al registrar operaciones.</p></div>
+          <div class="hint !mt-0 mb-3"><span>💡</span><p>Escribe el nombre y presiona <b>Enter</b> o el botón <b>+</b>. Las <b>tarifas</b> de cada cliente aparecen como valores para elegir al registrar un viaje; con <b>+ tarifa</b> agregas otra.</p></div>
           <div class="space-y-2">
             <template x-for="c in clients" :key="'cl'+c">
-              <div class="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-                <span class="font-semibold" x-text="c"></span>
-                <span class="text-xs text-acero/50" x-text="ops.filter(o=>o.cliente===c && o.estado!=='Anulado').length + ' viajes · ' + fmt(ops.filter(o=>o.cliente===c && o.estado!=='Anulado').reduce((s,o)=>s+o.monto,0))"></span>
+              <div class="rounded-xl bg-white/5 px-4 py-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-semibold" x-text="c"></span>
+                  <span class="text-xs text-acero/50 text-right shrink-0" x-text="ops.filter(o=>o.cliente===c && o.estado!=='Anulado').length + ' viajes · ' + fmt(ops.filter(o=>o.cliente===c && o.estado!=='Anulado').reduce((s,o)=>s+o.monto,0))"></span>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5 mt-2">
+                  <template x-for="t in tarifasDe(c)" :key="'tc'+c+t.label+t.monto">
+                    <span class="chip bg-naranja/15 text-naranja inline-flex items-center gap-1 normal-case tracking-normal">
+                      <span x-text="t.label + ': ' + fmt(t.monto)"></span>
+                      <button x-show="role==='admin'" @click="quitarTarifa(c,t)" class="hover:text-rojo font-bold" title="Quitar tarifa">×</button>
+                    </span>
+                  </template>
+                  <span x-show="!tarifasDe(c).length" class="text-[0.65rem] text-acero/40 italic">Sin tarifas — el monto se escribe a mano</span>
+                  <button x-show="role==='admin'" @click="agregarTarifa(c)" class="chip bg-white/10 text-acero/70 hover:bg-white/20 normal-case tracking-normal">+ tarifa</button>
+                </div>
               </div>
             </template>
           </div>
@@ -1009,7 +1021,7 @@ tailwind.config = {
       <div>
         <label class="lbl" x-text="opForm.modalidad==='tercero_recibido' ? 'Cliente Externo *' : 'Cliente *'"></label>
         <template x-if="opForm.modalidad!=='tercero_recibido'">
-          <select x-model="opForm.cliente" class="field"><option value="">— Seleccionar —</option><template x-for="c in clients" :key="'oc'+c"><option :value="c" x-text="c"></option></template></select>
+          <select x-model="opForm.cliente" @change="onClienteChange()" class="field"><option value="">— Seleccionar —</option><template x-for="c in clients" :key="'oc'+c"><option :value="c" x-text="c"></option></template></select>
         </template>
         <template x-if="opForm.modalidad==='tercero_recibido'">
           <input x-model="opForm.cliente" class="field" placeholder="Nombre del cliente externo">
@@ -1022,7 +1034,28 @@ tailwind.config = {
         </select>
         <p x-show="opForm.modalidad==='viaje_dado'" class="text-[0.65rem] text-acero/50 mt-1">Viaje dado: lo ejecuta camión externo.</p>
       </div>
-      <div><label class="lbl">Monto RD$ *</label><input type="number" min="0" step="0.01" x-model.number="opForm.monto" class="field" placeholder="20000"></div>
+      <div>
+        <label class="lbl">Valor del Viaje RD$ *</label>
+        <!-- Desplegable con las tarifas del cliente -->
+        <select x-show="tarifasDe(opForm.cliente).length && !opForm.montoLibre" x-model="opForm.tarifaSel" @change="aplicarTarifa()" class="field">
+          <option value="">— Seleccionar valor —</option>
+          <template x-for="t in tarifasDe(opForm.cliente)" :key="'tf'+t.label+t.monto">
+            <option :value="t.monto" x-text="t.label + ' · ' + fmt(t.monto)"></option>
+          </template>
+          <option value="__otro">✏️ Otro monto…</option>
+        </select>
+        <!-- Monto escrito a mano -->
+        <div x-show="!tarifasDe(opForm.cliente).length || opForm.montoLibre" class="flex gap-2">
+          <input type="number" min="0" step="0.01" x-model.number="opForm.monto" class="field" placeholder="Escribe el monto">
+          <button x-show="opForm.montoLibre && tarifasDe(opForm.cliente).length" @click="opForm.montoLibre=false; opForm.tarifaSel=''; opForm.monto=null"
+                  class="btn-ghost !px-3 shrink-0" title="Volver a las tarifas"><i data-lucide="list" class="w-4 h-4"></i></button>
+        </div>
+        <label x-show="opForm.monto || opForm.tarifaSel" class="flex items-center gap-2 mt-2 text-[0.7rem] text-acero/60 cursor-pointer">
+          <input type="checkbox" x-model="opForm.medioViaje" @change="aplicarTarifa()" class="accent-naranja w-3.5 h-3.5">
+          Medio viaje urbano (50% de la tarifa)
+        </label>
+        <p x-show="!opForm.cliente" class="text-[0.65rem] text-acero/40 mt-1">Elige primero el cliente para ver sus tarifas.</p>
+      </div>
       <template x-if="opForm.modalidad==='viaje_dado'">
         <div><label class="lbl">Chofer / Camión Externo *</label><input x-model="opForm.choferExterno" class="field" placeholder="Nombre del tercero"></div>
       </template>
@@ -1085,6 +1118,8 @@ function app() {
     choferes: [],
     newChofer: { nombre:'', tipo:'interno' },
     sindCfg: { pct:3, fijoSemanal:1000 },
+    tarifas: {},
+    newTarifa: { label:'', monto:null },
     disp: { ingresos:0, gastos:0, sindicato:0, neta:0 },
     clients: [], trucks: [], ops: [], expenses: [],
     session: null, role: null, authForm: { email:'', pass:'' }, authError: '', authBusy: false, sb: null, _reloadT: null,
@@ -1164,6 +1199,7 @@ function app() {
         if (r.key === 'trucks') this.trucks = r.value;
         if (r.key === 'choferes') this.choferes = r.value;
         if (r.key === 'sindcfg') this.sindCfg = Object.assign({ pct:3, fijoSemanal:1000 }, r.value);
+        if (r.key === 'tarifas') this.tarifas = r.value || {};
         if (r.key === 'seqs') { this.seq = r.value.seq || 1; this.facSeq = r.value.facSeq || 1; }
       });
       this.ops = (oR.data || []).map(r => this.opFromDb(r));
@@ -1178,7 +1214,7 @@ function app() {
     async saveMasters() {
       await this.sb.from('masters').upsert([
         { key:'clients', value:this.clients }, { key:'trucks', value:this.trucks },
-        { key:'choferes', value:this.choferes }, { key:'sindcfg', value:this.sindCfg },
+        { key:'choferes', value:this.choferes }, { key:'sindcfg', value:this.sindCfg }, { key:'tarifas', value:this.tarifas },
         { key:'seqs', value:{ seq:this.seq, facSeq:this.facSeq } },
       ]);
     },
@@ -1213,10 +1249,33 @@ function app() {
         contenedor:'', importacion:'', chasis:'', cliente:'', rotulo:'', destino:'',
         monto:null, modalidad:'propia', retornoVacio:false, estado:'Pendiente',
         choferExterno:'', montoTercero:null, chofer:'', contenedorRetorno:'', observaciones:'',
+        tarifaSel:'', montoLibre:false, medioViaje:false,
       };
     },
     openOpModal() { this.resetOpForm(); this.opModal = true; },
-    editOp(o) { this.opError=''; this.opForm = JSON.parse(JSON.stringify(o)); this.opModal = true; },
+    tarifasDe(cliente) { return (cliente && this.tarifas && this.tarifas[cliente]) ? this.tarifas[cliente] : []; },
+    onClienteChange() { this.opForm.tarifaSel = ''; this.opForm.montoLibre = false; this.opForm.medioViaje = false; this.opForm.monto = null; },
+    aplicarTarifa() {
+      if (this.opForm.tarifaSel === '__otro') { this.opForm.montoLibre = true; this.opForm.tarifaSel = ''; this.opForm.monto = null; this.refreshIcons(); return; }
+      const base = Number(this.opForm.tarifaSel) || 0;
+      if (!base) { if (!this.opForm.montoLibre) this.opForm.monto = null; return; }
+      this.opForm.monto = this.opForm.medioViaje ? base / 2 : base;
+    },
+    agregarTarifa(cliente) {
+      const label = (prompt('Nombre de la tarifa para ' + cliente + ' (ej: Normal, Interior, 40 pies):') || '').trim();
+      if (!label) return;
+      const monto = Number((prompt('Monto RD$ para "' + label + '":') || '').replace(/[^0-9.]/g, ''));
+      if (!monto || monto <= 0) { alert('Monto inválido.'); return; }
+      if (!this.tarifas[cliente]) this.tarifas[cliente] = [];
+      this.tarifas[cliente].push({ label, monto });
+      this.persist(); this.refreshIcons();
+    },
+    quitarTarifa(cliente, t) {
+      if (!confirm('¿Quitar la tarifa "' + t.label + '" de ' + cliente + '?')) return;
+      this.tarifas[cliente] = (this.tarifas[cliente] || []).filter(x => !(x.label === t.label && x.monto === t.monto));
+      this.persist(); this.refreshIcons();
+    },
+    editOp(o) { this.opError=''; this.opForm = Object.assign({ tarifaSel:'', montoLibre:true, medioViaje:false }, JSON.parse(JSON.stringify(o))); this.opForm.montoLibre = true; this.opModal = true; },
     saveOp() {
       const f = this.opForm;
       if (!f.contenedor || !f.importacion || !f.cliente || !f.monto || f.monto <= 0) { this.opError = 'Completa contenedor, importación, cliente y un monto válido.'; return; }
