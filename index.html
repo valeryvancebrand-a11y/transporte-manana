@@ -1037,7 +1037,7 @@ tailwind.config = {
 
     <div class="grid sm:grid-cols-2 gap-4">
       <div><label class="lbl">Viaje No.</label><input x-model="opForm.viajeNo" class="field" placeholder="Auto" readonly></div>
-      <div><label class="lbl">Fecha</label><input type="date" x-model="opForm.fecha" class="field"></div>
+      <div><label class="lbl">Fecha</label><input type="date" x-model="opForm.fecha" :max="hoyLocal()" class="field"></div>
       <div><label class="lbl">Nº Contenedor *</label><input x-model="opForm.contenedor" class="field" placeholder="MSKU-123456-7"></div>
       <div><label class="lbl">Nº Importación *</label><input x-model="opForm.importacion" class="field" placeholder="IMP-2026-0001"></div>
       <div><label class="lbl">Chasis</label><input x-model="opForm.chasis" class="field" placeholder="CH-4590"></div>
@@ -1094,7 +1094,7 @@ tailwind.config = {
         <div><label class="lbl">Chofer / Camión Externo *</label><input x-model="opForm.choferExterno" class="field" placeholder="Nombre del tercero"></div>
       </template>
       <template x-if="opForm.modalidad==='viaje_dado'">
-        <div><label class="lbl">Monto a Pagar al Tercero RD$</label><input type="number" min="0" step="0.01" x-model.number="opForm.montoTercero" class="field" placeholder="15000"></div>
+        <div><label class="lbl">Monto a Pagar al Tercero RD$ *</label><input type="number" min="0" step="0.01" x-model.number="opForm.montoTercero" class="field" placeholder="15000"></div>
       </template>
       <template x-if="opForm.modalidad!=='viaje_dado'">
         <div><label class="lbl">Chofer</label><input x-model="opForm.chofer" list="lista-choferes" class="field" placeholder="Nombre del chofer"></div>
@@ -1363,6 +1363,8 @@ function app() {
       if (!f.contenedor || !f.importacion || !f.cliente || !f.monto || f.monto <= 0) { this.opError = 'Completa contenedor, importación, cliente y un monto válido.'; return; }
       if (f.modalidad !== 'viaje_dado' && !f.rotulo) { this.opError = 'Selecciona el rótulo del camión.'; return; }
       if (f.modalidad === 'viaje_dado' && !f.choferExterno) { this.opError = 'Indica el chofer / camión externo.'; return; }
+      if (f.modalidad === 'viaje_dado' && (!Number(f.montoTercero) || Number(f.montoTercero) <= 0)) { this.opError = 'Indica cuánto se le paga al tercero: sin ese monto la ganancia queda inflada.'; return; }
+      if (f.fecha && f.fecha > this.hoyLocal()) { this.opError = 'La fecha no puede ser futura. Revisa el mes en el calendario.'; return; }
       this.opBusy = true; this.opError = '';
       (async () => {
         try {
@@ -1393,8 +1395,8 @@ function app() {
             if (!data || !data[0]) { this.opError = 'No se pudo registrar, intenta de nuevo.'; return; }
             this.ops.push(this.opFromDb(data[0]));
             this.seq = (parseInt(String(f.viajeNo).replace(/\D/g,''), 10) || 1) + 1;
-            if (f.modalidad === 'viaje_dado') {
-              const gasto = { fecha:f.fecha, categoria:'Pago chofer', rotulo:'', descripcion:'Pago a tercero — viaje '+f.viajeNo, detalle:f.choferExterno, metodo:'', responsable:f.choferExterno, monto:Number(f.montoTercero||0), anulado:false };
+            if (f.modalidad === 'viaje_dado' && Number(f.montoTercero) > 0) {
+              const gasto = { fecha:f.fecha, categoria:'Pago chofer', rotulo:'', descripcion:'Pago a tercero — viaje '+f.viajeNo, detalle:f.choferExterno, metodo:'', responsable:f.choferExterno, monto:Number(f.montoTercero), anulado:false };
               const { data: gd, error: ge } = await this.sb.from('expenses').insert(gasto).select();
               if (ge) alert('La operación se guardó, pero no se pudo registrar el pago al tercero: ' + ge.message);
               else if (gd && gd[0]) this.expenses.push(this.expFromDb(gd[0]));
