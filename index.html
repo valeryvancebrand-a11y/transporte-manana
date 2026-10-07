@@ -641,7 +641,7 @@ tailwind.config = {
           <div class="hint"><span>💡</span><p><b>Cómo funciona:</b> aquí no se escribe nada — el sistema aplica solo la fórmula <b>(Monto × %comisión) + fijo semanal por camión</b> con los parámetros configurables de abajo sobre cada viaje propio registrado. Úsala como control administrativo interno y también puedes imprimirla.</p></div>
           <div class="grid md:grid-cols-3 gap-4">
             <div class="bento p-5"><p class="lbl" x-text="'Comisión '+sindCfg.pct+'% total'"></p><p class="font-display text-2xl font-bold text-naranja" x-text="fmt(sindFees().pct)"></p></div>
-            <div class="bento p-5"><p class="lbl">Fijo semanal</p><p class="font-display text-2xl font-bold text-naranja" x-text="fmt(sindFees().fijo)"></p><p class="text-xs text-acero/50 mt-1"><span x-text="sindFees().camiones"></span> camiones × <span x-text="fmt(sindCfg.fijoSemanal)"></span></p></div>
+            <div class="bento p-5"><p class="lbl">Fijo semanal</p><p class="font-display text-2xl font-bold text-naranja" x-text="fmt(sindFees().fijo)"></p><p class="text-xs text-acero/50 mt-1"><span x-text="sindFees().semanas"></span> semanas-camión × <span x-text="fmt(sindCfg.fijoSemanal)"></span></p></div>
             <div class="bento p-5 glow-red"><p class="lbl">Total Sindicato</p><p class="font-display text-2xl font-bold text-white" x-text="fmt(sindFees().total)"></p></div>
           </div>
           <div class="bento p-5">
@@ -765,7 +765,10 @@ tailwind.config = {
                 <div><label class="lbl">Método de Pago</label>
                   <select x-model="expForm.metodo" class="field"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Cheque</option><option>Otro</option></select></div>
               </div>
-              <div><label class="lbl">Responsable / Chofer</label><input x-model="expForm.responsable" list="lista-choferes" class="field" placeholder="Opcional"></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="lbl">Responsable / Chofer</label><input x-model="expForm.responsable" list="lista-choferes" class="field" placeholder="Opcional"></div>
+                <div><label class="lbl">Fecha del gasto</label><input type="date" x-model="expForm.fecha" :max="hoyLocal()" class="field"></div>
+              </div>
               <button @click="addExpense()" :disabled="expBusy" class="btn-primary w-full flex items-center justify-center gap-2" :class="expBusy ? 'opacity-60 cursor-not-allowed' : ''"><i data-lucide="plus" class="w-4 h-4" x-show="!expBusy"></i><span x-text="expBusy ? 'Guardando…' : 'Registrar Gasto'"></span></button>
               <div class="hint !mt-1"><span>💡</span><p>Registra peajes, reparaciones, piezas o repuestos eligiendo siempre el <b>rótulo</b> del camión: así el gasto queda atado a esa unidad y alimenta su rentabilidad en el dashboard.</p></div>
             </div>
@@ -1170,10 +1173,10 @@ function app() {
     clients: [], trucks: [], ops: [], expenses: [],
     session: null, role: null, authForm: { email:'', pass:'' }, authError: '', authBusy: false, sb: null, _reloadT: null,
     opBusy: false, fuelBusy: false, expBusy: false, verMax: 150,
-    seq: 1, expSeq: 1,
+    seq: 1, facSeq: 1,
     expCategorias: ['Gasoil','Peajes','Reparaciones','Mantenimiento','Piezas','Dietas','Pago chofer','Seguros','Impuestos','Gastos en repuestos','Otros'],
     fuelForm: { rotulo:'', galones:null, precio:null, viajeId:'', chofer:'', cooperativa:'', fecha:'' },
-    expForm: { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'' },
+    expForm: { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'', fecha:'' },
     opForm: {},
     navItems: [
       { id:'dashboard', label:'Dashboard', short:'Inicio', icon:'layout-dashboard' },
@@ -1199,7 +1202,10 @@ function app() {
       this.theme = localStorage.getItem('tm_theme') || 'dark';
       this.applyTheme();
       this.resetOpForm();
-      this.$watch('view', v => { this.refreshIcons(); if (v === 'dashboard') this.tweenKpis(); });
+      this.$watch('view', v => {
+        if (this.role && this.role !== 'admin' && ['dashboard','reportes'].indexOf(v) > -1) { this.view = 'ops'; return; }
+        this.refreshIcons(); if (v === 'dashboard') this.tweenKpis();
+      });
       this.$watch('opModal', () => this.refreshIcons());
       this.$watch('sindTab', () => this.refreshIcons());
       this.$watch('session', () => this.refreshIcons());
@@ -1223,7 +1229,7 @@ function app() {
       try { localStorage.setItem('tm_last_email', this.authForm.email.trim().toLowerCase()); } catch(e) {}
       await this.afterLogin();
     },
-    async logout() { await this.sb.auth.signOut(); this.session = null; this.role = null; this.ops = []; this.expenses = []; },
+    async logout() { try { await this.sb.auth.signOut(); } catch(e) {} this.session = null; this.role = null; this.ops = []; this.expenses = []; this.clients = []; this.trucks = []; this.choferes = []; this.tarifas = {}; this.view = 'dashboard'; this.disp = { ingresos:0, gastos:0, sindicato:0, neta:0 }; },
     async afterLogin() {
       const uid = this.session.user.id;
       const { data: prof } = await this.sb.from('profiles').select('role').eq('id', uid).single();
@@ -1259,7 +1265,7 @@ function app() {
         if (r.key === 'sindcfg') this.sindCfg = Object.assign({ pct:3, fijoSemanal:1000 }, r.value);
         if (r.key === 'tarifas') this.tarifas = r.value || {};
         if (r.key === 'destinos' && Array.isArray(r.value) && r.value.length) this.destinos = r.value;
-        if (r.key === 'seqs') { this.seq = r.value.seq || 1; this.facSeq = r.value.facSeq || 1; }
+        if (r.key === 'seqs') { this.seq = Number(r.value.seq) || 1; this.facSeq = Number(r.value.facSeq) || 1; }
       });
       this.ops = (oR.data || []).map(r => this.opFromDb(r));
       this.expenses = (eR.data || []).map(r => this.expFromDb(r));
@@ -1293,6 +1299,10 @@ function app() {
     toggleTheme() { this.theme = this.theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('tm_theme', this.theme); this.applyTheme(); this.refreshIcons(); },
     persist() { this.saveMasters(); this.tweenKpis(); },
     // ---------- helpers ----------
+    // La fecha SIEMPRE en hora local de RD: toISOString() usa UTC y despues de las 8pm daba el dia siguiente
+    hoyLocal() { return this.fechaLocal(new Date()); },
+    fechaLocal(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); },
+    esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
     fmt(n) { return 'RD$' + (Number(n)||0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
     currentTitle() { const it = this.navItems.find(i=>i.id===this.view); return it ? it.label : ''; },
     modeLabel(m) { return { propia:'Propia', tercero_recibido:'Tercero Neto', viaje_dado:'Viaje Dado' }[m] || m; },
@@ -1303,9 +1313,9 @@ function app() {
     resetOpForm() {
       this.opError = '';
       this.opForm = {
-        id: null, viajeNo: 'V-' + String(this.seq).padStart(4,'0'),
-        fecha: new Date().toISOString().slice(0,10),
-        contenedor:'', importacion:'', chasis:'', cliente:'', rotulo:'', destino:'',
+        id: null, viajeNo: 'Se asigna al guardar',
+        fecha: this.hoyLocal(),
+        contenedor:'', importacion:'', chasis:'', cliente:'', rotulo:'',
         monto:null, modalidad:'propia', retornoVacio:false, estado:'Pendiente',
         destino:'Caucedo',
         choferExterno:'', montoTercero:null, chofer:'', contenedorRetorno:'', observaciones:'',
@@ -1338,14 +1348,18 @@ function app() {
     editOp(o) { this.opError=''; this.opForm = Object.assign({ tarifaSel:'', montoLibre:true, medioViaje:false, cita:false, destinoLibre:false }, JSON.parse(JSON.stringify(o))); this.opForm.montoLibre = true; this.opForm.destinoLibre = !!(o.destino && !this.destinos.includes(o.destino)); this.opModal = true; },
     async nextViajeNo() {
       // El número se toma SIEMPRE de la base de datos, para que dos personas no repitan número
-      const { data } = await this.sb.from('operations').select('viaje_no').order('viaje_no', { ascending: false }).limit(1);
+      const { data } = await this.sb.from('operations').select('viaje_no').order('id', { ascending: false }).limit(500);
       let n = 0;
-      if (data && data[0] && data[0].viaje_no) { const m = String(data[0].viaje_no).match(/(\d+)/); if (m) n = parseInt(m[1], 10); }
+      (data || []).forEach(r => { const m = String(r.viaje_no || '').match(/(\d+)/); if (m) { const v = parseInt(m[1], 10); if (v > n) n = v; } });
       return n + 1;
     },
     saveOp() {
       if (this.opBusy) return;                     // evita que un doble clic registre el viaje dos veces
       const f = this.opForm;
+      // normalizar para que 'tclu 123' y 'TCLU123' no pasen como contenedores distintos
+      f.contenedor = String(f.contenedor || '').trim().toUpperCase().replace(/\s+/g, '');
+      f.importacion = String(f.importacion || '').trim();
+      f.contenedorRetorno = String(f.contenedorRetorno || '').trim().toUpperCase().replace(/\s+/g, '');
       if (!f.contenedor || !f.importacion || !f.cliente || !f.monto || f.monto <= 0) { this.opError = 'Completa contenedor, importación, cliente y un monto válido.'; return; }
       if (f.modalidad !== 'viaje_dado' && !f.rotulo) { this.opError = 'Selecciona el rótulo del camión.'; return; }
       if (f.modalidad === 'viaje_dado' && !f.choferExterno) { this.opError = 'Indica el chofer / camión externo.'; return; }
@@ -1360,7 +1374,7 @@ function app() {
             if (idx > -1) this.ops.splice(idx,1,this.opFromDb(data[0]));
           } else {
             // Aviso si el contenedor ya fue registrado
-            const cont = String(f.contenedor).trim();
+            const cont = f.contenedor;
             const { data: rep } = await this.sb.from('operations').select('viaje_no,fecha').eq('contenedor', cont).neq('estado','Anulado').limit(1);
             if (rep && rep.length) {
               if (!confirm('⚠️ El contenedor ' + cont + ' ya está registrado en el viaje ' + rep[0].viaje_no + ' (' + rep[0].fecha + ').\n\n¿Registrarlo de todas formas?')) { return; }
@@ -1385,7 +1399,8 @@ function app() {
               if (ge) alert('La operación se guardó, pero no se pudo registrar el pago al tercero: ' + ge.message);
               else if (gd && gd[0]) this.expenses.push(this.expFromDb(gd[0]));
             }
-            await this.saveMasters();
+            // ya no se reescriben los maestros aqui: el numero sale de la base y
+            // guardarlos podia pisar clientes o tarifas agregados por otro usuario
           }
           this.tweenKpis(); this.opModal = false; this.refreshIcons();
         } catch (e) {
@@ -1422,10 +1437,10 @@ function app() {
     },
     hayMasPorVer() { const l = this.filteredOps().length; return this.verMax && l > this.verMax; },
     printOperaciones() {
-      const filas = g => g.items.map(o => `<tr><td>${o.viajeNo}</td><td>${o.fecha}</td><td>${o.cita ? 'SÍ' : 'No'}</td><td>${o.contenedor||''}</td><td>${o.importacion||''}</td><td>${o.cliente||''}</td><td>${o.rotulo||'—'}</td><td>${o.destino||''}</td><td>${this.modeLabel(o.modalidad)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td>${o.estado}</td></tr>`).join('');
+      const filas = g => g.items.map(o => `<tr><td>${this.esc(o.viajeNo)}</td><td>${this.esc(o.fecha)}</td><td>${o.cita ? 'SÍ' : 'No'}</td><td>${this.esc(o.contenedor||'')}</td><td>${this.esc(o.importacion||'')}</td><td>${this.esc(o.cliente||'')}</td><td>${this.esc(o.rotulo||'—')}</td><td>${this.esc(o.destino||'')}</td><td>${this.modeLabel(o.modalidad)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td>${this.esc(o.estado)}</td></tr>`).join('');
       const cab = '<thead><tr><th>Viaje</th><th>Fecha</th><th>Cita</th><th>Contenedor</th><th>Importación</th><th>Cliente</th><th>Rótulo</th><th>Destino</th><th>Modalidad</th><th>Monto</th><th>Retorno</th><th>Estado</th></tr></thead>';
       const gs = this.gruposCita();
-      const bloque = g => `<h2 style="margin:16px 0 6px;">${g.titulo} (${g.items.length})</h2>
+      const bloque = g => `<h2 style="margin:16px 0 6px;">${this.esc(g.titulo)} (${g.items.length})</h2>
         <table>${cab}<tbody>${filas(g) || '<tr><td colspan="12">' + g.vacio + '</td></tr>'}</tbody>
         <tfoot><tr><td colspan="9" style="text-align:right;font-weight:bold;">Total del grupo</td><td style="text-align:right;font-weight:bold;">${this.fmt(g.items.reduce((s,o)=>s+this.ingresoOf(o),0))}</td><td colspan="2"></td></tr></tfoot></table>`;
       const tot = this.filteredOps().reduce((s,o)=>s+this.ingresoOf(o),0);
@@ -1444,7 +1459,7 @@ function app() {
       return (this.rango.desde || 'inicio') + ' → ' + (this.rango.hasta || 'hoy');
     },
     setQuickRange(t) {
-      const d = new Date(); const iso = x => x.toISOString().slice(0,10);
+      const d = new Date(); const iso = x => this.fechaLocal(x);
       if (t === 'hoy') { this.rango = { desde: iso(d), hasta: iso(d) }; }
       else if (t === 'semana') { const lunes = new Date(d); lunes.setDate(d.getDate() - ((d.getDay()+6)%7)); this.rango = { desde: iso(lunes), hasta: iso(d) }; }
       else if (t === 'mes') { this.rango = { desde: iso(new Date(d.getFullYear(), d.getMonth(), 1)), hasta: iso(d) }; }
@@ -1460,13 +1475,24 @@ function app() {
     sindicatoOps() { return this.activeOps().filter(o => o.modalidad === 'propia' && this.inRange(o.fecha)); },
     sindComision(m) { return (Number(m)||0) * this.sindCfg.pct / 100; },
     sindNeto(m) { return (Number(m)||0) - this.sindComision(m); },
-    sindFees() {
-      const opsS = this.sindicatoOps();
-      const pct = opsS.reduce((s,o)=>s + this.sindComision(o.monto), 0);
-      const camiones = new Set(opsS.map(o=>o.rotulo)).size;
-      const fijo = camiones * this.sindCfg.fijoSemanal;
-      return { pct, fijo, camiones, total: pct + fijo };
+    semanaDe(fecha) {
+      const p = String(fecha || '').split('-');
+      if (p.length !== 3) return '';
+      const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return this.fechaLocal(d);
     },
+    // El fijo se cobra por camion y por CADA semana en que ese camion trabajo
+    sindFeesDe(opsS) {
+      const pct = opsS.reduce((s,o)=>s + this.sindComision(o.monto), 0);
+      const pares = new Set();
+      opsS.forEach(o => { if (o.rotulo && o.fecha) pares.add(o.rotulo + '|' + this.semanaDe(o.fecha)); });
+      const camiones = new Set(opsS.map(o=>o.rotulo).filter(Boolean)).size;
+      const fijo = pares.size * (Number(this.sindCfg.fijoSemanal) || 0);
+      return { pct, fijo, camiones, semanas: pares.size, total: pct + fijo };
+    },
+    sindFees() { return this.sindFeesDe(this.sindicatoOps()); },
+    sindFeesTotal() { return this.sindFeesDe(this.activeOps().filter(o => o.modalidad === 'propia')); },
     saveSindCfg() { this.persist(); },
 
     // ---------- facturación ----------
@@ -1481,11 +1507,11 @@ function app() {
     },
     printFacturaCliente(grp) {
       const items = grp.items.filter(o => o.estado !== 'Anulado');
-      const rows = items.map(o => `<tr><td>${o.viajeNo}</td><td>${o.contenedor}</td><td>${o.importacion}</td><td>${o.destino||'—'}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td style="text-align:right;font-weight:bold;">${this.fmt(this.ingresoOf(o))}</td><td>${o.estado}</td><td>${o.observaciones||''}</td></tr>`).join('');
+      const rows = items.map(o => `<tr><td>${this.esc(o.viajeNo)}</td><td>${this.esc(o.contenedor)}</td><td>${this.esc(o.importacion)}</td><td>${this.esc(o.destino||'—')}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td style="text-align:right;font-weight:bold;">${this.fmt(this.ingresoOf(o))}</td><td>${this.esc(o.estado)}</td><td>${this.esc(o.observaciones||'')}</td></tr>`).join('');
       const total = items.reduce((s,o)=>s+this.ingresoOf(o),0);
       const nf = 'FAC-' + new Date().getFullYear() + '-' + String(this.facSeq).padStart(4,'0');
       this.facSeq++; this.persist();
-      this.printHTML('Factura Nº ' + nf, 'Cliente: <b>' + grp.cliente + '</b>', `
+      this.printHTML('Factura Nº ' + nf, 'Cliente: <b>' + this.esc(grp.cliente) + '</b>', `
         <table><thead><tr><th>Viaje</th><th>Nº Contenedor</th><th>Nº Importación</th><th>Destino</th><th>Flete</th><th>Retorno 50%</th><th>Valor RD$</th><th>Estado de Pago</th><th>Observaciones</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="9">Sin operaciones</td></tr>'}</tbody>
         <tfoot><tr><td colspan="6" style="text-align:right;font-weight:bold;">TOTAL</td><td style="text-align:right;font-weight:bold;">${this.fmt(total)}</td><td colspan="2"></td></tr></tfoot></table>
@@ -1493,20 +1519,28 @@ function app() {
     },
     async facturarCliente(c) {
       const objetivo = this.ops.filter(o => o.cliente===c && o.estado==='Pendiente' && o.modalidad!=='tercero_recibido');
-      for (const o of objetivo) await this.setEstado(o, 'Facturado');
+      if (!objetivo.length) { alert('No hay operaciones pendientes de ' + c + '.'); return; }
+      const ids = objetivo.map(o => o.id);
+      const { data, error } = await this.sb.from('operations').update({ estado:'Facturado' }).in('id', ids).select('id');
+      const hechos = (data || []).map(r => r.id);
+      this.ops.forEach(o => { if (hechos.indexOf(o.id) > -1) o.estado = 'Facturado'; });
+      this.tweenKpis();
+      if (error) { alert('No se pudo facturar: ' + error.message); return; }
+      if (hechos.length < ids.length) alert('Se facturaron ' + hechos.length + ' de ' + ids.length + '. Las dem\u00e1s tienen m\u00e1s de 2 horas y solo el administrador puede cambiarlas.');
     },
 
     // ---------- gastos ----------
     addFuel() {
       if (this.fuelBusy) return;
       const f = this.fuelForm;
-      if (!f.rotulo || !f.galones || !f.precio) { alert('Gasoil: rótulo, galones y precio son obligatorios.'); return; }
+      const gal = Number(f.galones) || 0, pre = Number(f.precio) || 0;
+      if (!f.rotulo || gal <= 0 || pre <= 0) { alert('Gasoil: rótulo, galones y precio son obligatorios y mayores que cero.'); return; }
       const viaje = this.ops.find(o=>o.id==f.viajeId);
       const gasto = {
-        fecha: f.fecha || new Date().toISOString().slice(0,10), categoria:'Gasoil', rotulo:f.rotulo,
+        fecha: f.fecha || this.hoyLocal(), categoria:'Gasoil', rotulo:f.rotulo,
         descripcion: 'Gasoil' + (viaje ? ' viaje ' + viaje.viajeNo : ''),
-        detalle: f.galones + ' gal × ' + this.fmt(f.precio) + (f.chofer ? ' · Chofer: ' + f.chofer : '') + (f.cooperativa ? ' · ' + f.cooperativa : ''),
-        metodo:'', responsable: f.chofer || '', monto: f.galones * f.precio, anulado: false,
+        detalle: gal + ' gal × ' + this.fmt(pre) + (f.chofer ? ' · Chofer: ' + f.chofer : '') + (f.cooperativa ? ' · ' + f.cooperativa : ''),
+        metodo:'', responsable: f.chofer || '', monto: gal * pre, anulado: false,
       };
       this.fuelBusy = true;
       (async () => {
@@ -1522,16 +1556,17 @@ function app() {
     addExpense() {
       if (this.expBusy) return;
       const f = this.expForm;
-      if (!f.monto || f.monto <= 0) { alert('Gasto: el monto es obligatorio.'); return; }
+      const mto = Number(f.monto) || 0;
+      if (mto <= 0) { alert('Gasto: el monto es obligatorio y mayor que cero.'); return; }
       const det = [f.metodo ? 'Pago: '+f.metodo : '', f.responsable ? 'Resp.: '+f.responsable : ''].filter(Boolean).join(' · ');
-      const gasto = { fecha:new Date().toISOString().slice(0,10), categoria:f.categoria, rotulo:f.rotulo, descripcion:f.descripcion || f.categoria, detalle:det, monto:f.monto, metodo:f.metodo, responsable:f.responsable, anulado:false };
+      const gasto = { fecha:f.fecha || this.hoyLocal(), categoria:f.categoria, rotulo:f.rotulo, descripcion:f.descripcion || f.categoria, detalle:det, monto:mto, metodo:f.metodo, responsable:f.responsable, anulado:false };
       this.expBusy = true;
       (async () => {
         try {
           const { data, error } = await this.sb.from('expenses').insert(gasto).select();
           if (error) { alert('Error al registrar gasto: ' + error.message); return; }
           this.expenses.push(this.expFromDb(data[0]));
-          this.expForm = { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'' };
+          this.expForm = { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'', fecha:'' };
           this.tweenKpis();
         } finally { this.expBusy = false; }
       })();
@@ -1559,7 +1594,7 @@ function app() {
       const act = this.activeOps();
       const ingresos = act.reduce((s,o)=>s + this.ingresoOf(o), 0);
       const gastos = this.activeExpenses().reduce((s,g)=>s + g.monto, 0);
-      const sindicato = this.sindFees().total;
+      const sindicato = this.sindFeesTotal().total;   // el dashboard es de TODO el historial, no del rango de reportes
       const nIngresos = act.length + act.filter(o=>o.retornoVacio).length;
       return { ingresos, gastos, sindicato, neta: ingresos - gastos - sindicato, nIngresos };
     },
@@ -1570,7 +1605,7 @@ function app() {
         const ingresos = tOps.reduce((s,o)=>s+this.ingresoOf(o),0);
         const gastos = this.activeExpenses().filter(g=>g.rotulo===t).reduce((s,g)=>s+g.monto,0);
         const sOps = tOps.filter(o=>o.modalidad==='propia');
-        const sindicato = sOps.reduce((s,o)=>s+o.monto*0.03,0) + (sOps.length ? 1000 : 0);
+        const sindicato = this.sindFeesDe(sOps).total;
         return { rotulo:t, viajes:tOps.length, ingresos, gastos, sindicato, neto: ingresos-gastos-sindicato, pct: Math.round(ingresos/max*100) };
       });
     },
@@ -1640,7 +1675,7 @@ function app() {
         lines.push([o.viajeNo,o.importacion,o.contenedor,o.rotulo,n(o.monto),n(this.sindComision(o.monto)),n(this.sindNeto(o.monto))].map(esc).join(','));
       });
       const f = this.sindFees();
-      lines.push(['','','','Fijo semanal (' + f.camiones + ' camiones × ' + n(this.sindCfg.fijoSemanal) + ')','','',n(f.fijo)].map(esc).join(','));
+      lines.push(['','','','Fijo semanal (' + f.semanas + ' semanas-camión × ' + n(this.sindCfg.fijoSemanal) + ')','','',n(f.fijo)].map(esc).join(','));
       lines.push(['','','','TOTAL SINDICATO','','',n(f.total)].map(esc).join(','));
       lines.push('');
       lines.push(esc('RESUMEN'));
@@ -1652,15 +1687,15 @@ function app() {
       const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      const hoy = new Date().toISOString().slice(0,10);
+      const hoy = this.hoyLocal();
       a.download = 'TransporteManana_Reporte_' + (this.rango.desde || 'inicio') + '_a_' + (this.rango.hasta || hoy) + '.csv';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
     },
     printReporte() {
       const k = this.rangeKpis();
-      const opRows = this.rangeOps().map(o => `<tr><td>${o.viajeNo}</td><td>${o.fecha}</td><td>${o.contenedor}</td><td>${o.importacion}</td><td>${o.cliente}</td><td>${o.rotulo||'—'}</td><td>${this.modeLabel(o.modalidad)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td>${o.estado}</td></tr>`).join('');
-      const gRows = this.rangeExpenses().map(g => `<tr><td>${g.fecha}</td><td>${g.categoria}</td><td>${g.rotulo||'—'}</td><td>${g.descripcion}</td><td style="text-align:right;">${this.fmt(g.monto)}</td></tr>`).join('');
+      const opRows = this.rangeOps().map(o => `<tr><td>${this.esc(o.viajeNo)}</td><td>${this.esc(o.fecha)}</td><td>${this.esc(o.contenedor)}</td><td>${this.esc(o.importacion)}</td><td>${this.esc(o.cliente)}</td><td>${this.esc(o.rotulo||'—')}</td><td>${this.modeLabel(o.modalidad)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td>${this.esc(o.estado)}</td></tr>`).join('');
+      const gRows = this.rangeExpenses().map(g => `<tr><td>${this.esc(g.fecha)}</td><td>${this.esc(g.categoria)}</td><td>${this.esc(g.rotulo||'—')}</td><td>${this.esc(g.descripcion)}</td><td style="text-align:right;">${this.fmt(g.monto)}</td></tr>`).join('');
       this.printHTML('Reporte General del Período', this.rangoLabel(), `
         <h2 style="margin:14px 0 6px;">Resumen</h2>
         <table><tbody>
@@ -1690,19 +1725,19 @@ function app() {
       window.print();
     },
     printSindicatoDoc() {
-      const rows = this.sindicatoOps().map(o=>`<tr><td>${o.importacion}</td><td>${o.contenedor}</td><td>${o.rotulo}</td><td>${o.cliente}</td><td style="text-align:right;">${this.fmt(o.monto)}</td></tr>`).join('');
+      const rows = this.sindicatoOps().map(o=>`<tr><td>${this.esc(o.importacion)}</td><td>${this.esc(o.contenedor)}</td><td>${this.esc(o.rotulo)}</td><td>${this.esc(o.cliente)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td></tr>`).join('');
       const total = this.fmt(this.sindicatoOps().reduce((s,o)=>s+o.monto,0));
       this.printHTML('Documento Sindicato', 'Período: ' + this.rangoLabel(),
         `<table><thead><tr><th>Nº Importación</th><th>Nº Contenedor</th><th>Rótulo</th><th>Cliente</th><th>Monto</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="4" style="text-align:right;font-weight:bold;">TOTAL</td><td style="text-align:right;font-weight:bold;">${total}</td></tr></tfoot></table>`);
     },
     printSindicatoFactura() {
       const f = this.sindFees();
-      const rows = this.sindicatoOps().map(o=>`<tr><td>${o.viajeNo}</td><td>${o.contenedor}</td><td>${o.importacion}</td><td>${o.rotulo}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${this.fmt(this.sindComision(o.monto))}</td><td style="text-align:right;">${this.fmt(this.sindNeto(o.monto))}</td></tr>`).join('');
+      const rows = this.sindicatoOps().map(o=>`<tr><td>${this.esc(o.viajeNo)}</td><td>${this.esc(o.contenedor)}</td><td>${this.esc(o.importacion)}</td><td>${this.esc(o.rotulo)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${this.fmt(this.sindComision(o.monto))}</td><td style="text-align:right;">${this.fmt(this.sindNeto(o.monto))}</td></tr>`).join('');
       this.printHTML('Factura Interna — Sindicato', 'Período: ' + this.rangoLabel() + ' · 3% del flete + RD$1,000 semanal por camión',
         `<table><thead><tr><th>Viaje</th><th>Contenedor</th><th>Importación</th><th>Rótulo</th><th>Monto</th><th>Comisión ${this.sindCfg.pct}%</th><th>Neto</th></tr></thead><tbody>${rows}</tbody>
          <tfoot>
            <tr><td colspan="5" style="text-align:right;">Comisión ${this.sindCfg.pct}%</td><td colspan="2" style="text-align:right;font-weight:bold;">${this.fmt(f.pct)}</td></tr>
-           <tr><td colspan="5" style="text-align:right;">Fijo semanal (${f.camiones} camiones × ${this.fmt(this.sindCfg.fijoSemanal)})</td><td colspan="2" style="text-align:right;font-weight:bold;">${this.fmt(f.fijo)}</td></tr>
+           <tr><td colspan="5" style="text-align:right;">Fijo semanal (${f.semanas} semanas-camión × ${this.fmt(this.sindCfg.fijoSemanal)})</td><td colspan="2" style="text-align:right;font-weight:bold;">${this.fmt(f.fijo)}</td></tr>
            <tr><td colspan="5" style="text-align:right;font-weight:bold;">TOTAL SINDICATO</td><td colspan="2" style="text-align:right;font-weight:bold;">${this.fmt(f.total)}</td></tr>
          </tfoot></table>`);
     },
