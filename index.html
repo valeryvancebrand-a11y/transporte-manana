@@ -466,7 +466,8 @@ tailwind.config = {
               <div class="flex items-center gap-2 mb-3 pb-2 border-b border-white/10">
                 <i :data-lucide="g.icon" class="w-4 h-4" :class="g.color"></i>
                 <h4 class="font-display font-bold text-sm" :class="g.color" x-text="g.titulo"></h4>
-                <span class="chip bg-white/10 text-acero/70" x-text="g.items.length"></span>
+                <span class="chip bg-white/10 text-acero/70" x-text="g.total"></span>
+                <span x-show="g.total > g.items.length" class="text-[0.65rem] text-acero/40" x-text="'mostrando los ' + g.items.length + ' más recientes'"></span>
               </div>
 
               <!-- móvil: tarjetas -->
@@ -535,6 +536,9 @@ tailwind.config = {
               </div>
             </div>
           </template>
+          <div x-show="hayMasPorVer()" class="text-center">
+            <button @click="verMax = 0" class="btn-ghost">Mostrar todas las operaciones (<span x-text="filteredOps().length"></span>)</button>
+          </div>
           <div class="hint hidden md:flex"><span>💡</span><p><b>Cómo registrar un viaje:</b> presiona <b>“Registrar”</b>, elige la <b>modalidad</b> (Propia = sindicato 3% + RD$1,000 y factura normal · Tercero Recibido Neto = sin factura ni sindicato, el ingreso va al rótulo · Viaje Dado = camión externo, genera factura al cliente y cuenta por pagar al tercero), completa contenedor, importación, cliente, rótulo y monto. Activa <b>“Retorno de Vacío”</b> si aplica y el sistema sumará automáticamente el 50% del flete. Con los botones <b>✏️ editar</b> y <b>🚫 anular</b> gestionas cada fila; lo anulado nunca se borra, queda en el historial.</p></div>
           <div class="hidden">
           </div>
@@ -741,7 +745,7 @@ tailwind.config = {
                 <div><label class="lbl">Cooperativa / Suplidor</label><input x-model="fuelForm.cooperativa" class="field" placeholder="Opcional"></div>
               </div>
               <div><label class="lbl">Fecha</label><input type="date" x-model="fuelForm.fecha" class="field"></div>
-              <button @click="addFuel()" class="btn-primary w-full flex items-center justify-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i>Registrar Gasoil</button>
+              <button @click="addFuel()" :disabled="fuelBusy" class="btn-primary w-full flex items-center justify-center gap-2" :class="fuelBusy ? 'opacity-60 cursor-not-allowed' : ''"><i data-lucide="plus" class="w-4 h-4" x-show="!fuelBusy"></i><span x-text="fuelBusy ? 'Guardando…' : 'Registrar Gasoil'"></span></button>
               <div class="hint !mt-1"><span>💡</span><p>Elige el <b>rótulo</b>, escribe <b>galones</b> y <b>precio por galón</b> — el total RD$ se calcula solo. Puedes vincularlo a un viaje o a un chofer. Al guardar, pasa automáticamente a Gastos una sola vez.</p></div>
             </div>
           </div>
@@ -762,7 +766,7 @@ tailwind.config = {
                   <select x-model="expForm.metodo" class="field"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Cheque</option><option>Otro</option></select></div>
               </div>
               <div><label class="lbl">Responsable / Chofer</label><input x-model="expForm.responsable" list="lista-choferes" class="field" placeholder="Opcional"></div>
-              <button @click="addExpense()" class="btn-primary w-full flex items-center justify-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i>Registrar Gasto</button>
+              <button @click="addExpense()" :disabled="expBusy" class="btn-primary w-full flex items-center justify-center gap-2" :class="expBusy ? 'opacity-60 cursor-not-allowed' : ''"><i data-lucide="plus" class="w-4 h-4" x-show="!expBusy"></i><span x-text="expBusy ? 'Guardando…' : 'Registrar Gasto'"></span></button>
               <div class="hint !mt-1"><span>💡</span><p>Registra peajes, reparaciones, piezas o repuestos eligiendo siempre el <b>rótulo</b> del camión: así el gasto queda atado a esa unidad y alimenta su rentabilidad en el dashboard.</p></div>
             </div>
           </div>
@@ -1128,7 +1132,10 @@ tailwind.config = {
     <p x-show="opError" x-text="opError" class="mt-3 text-sm text-rojo font-semibold"></p>
 
     <div class="flex gap-3 mt-5">
-      <button @click="saveOp()" class="btn-primary flex-1 flex items-center justify-center gap-2"><i data-lucide="check" class="w-4 h-4"></i><span x-text="opForm.id ? 'Guardar Cambios' : 'Registrar Operación'"></span></button>
+      <button @click="saveOp()" :disabled="opBusy" class="btn-primary flex-1 flex items-center justify-center gap-2" :class="opBusy ? 'opacity-60 cursor-not-allowed' : ''">
+        <i data-lucide="check" class="w-4 h-4" x-show="!opBusy"></i>
+        <span x-text="opBusy ? 'Guardando…' : (opForm.id ? 'Guardar Cambios' : 'Registrar Operación')"></span>
+      </button>
       <button @click="opModal=false" class="btn-ghost">Cancelar</button>
     </div>
   </div>
@@ -1162,6 +1169,7 @@ function app() {
     disp: { ingresos:0, gastos:0, sindicato:0, neta:0 },
     clients: [], trucks: [], ops: [], expenses: [],
     session: null, role: null, authForm: { email:'', pass:'' }, authError: '', authBusy: false, sb: null, _reloadT: null,
+    opBusy: false, fuelBusy: false, expBusy: false, verMax: 150,
     seq: 1, expSeq: 1,
     expCategorias: ['Gasoil','Peajes','Reparaciones','Mantenimiento','Piezas','Dietas','Pago chofer','Seguros','Impuestos','Gastos en repuestos','Otros'],
     fuelForm: { rotulo:'', galones:null, precio:null, viajeId:'', chofer:'', cooperativa:'', fecha:'' },
@@ -1228,10 +1236,21 @@ function app() {
     },
     reloadSoon() { clearTimeout(this._reloadT); this._reloadT = setTimeout(() => this.loadAll(), 800); },
     async loadAll() {
+      const traerTodo = async (tabla) => {
+        const PAG = 1000; let desde = 0, acc = [];
+        while (true) {
+          const { data, error } = await this.sb.from(tabla).select('*').order('id').range(desde, desde + PAG - 1);
+          if (error || !data) break;
+          acc = acc.concat(data);
+          if (data.length < PAG) break;
+          desde += PAG;
+        }
+        return { data: acc };
+      };
       const [mR, oR, eR] = await Promise.all([
         this.sb.from('masters').select('*'),
-        this.sb.from('operations').select('*').order('id'),
-        this.sb.from('expenses').select('*').order('id'),
+        traerTodo('operations'),
+        traerTodo('expenses'),
       ]);
       (mR.data || []).forEach(r => {
         if (r.key === 'clients') this.clients = r.value;
@@ -1295,7 +1314,7 @@ function app() {
     },
     openOpModal() { this.resetOpForm(); this.opModal = true; },
     tarifasDe(cliente) { return (cliente && this.tarifas && this.tarifas[cliente]) ? this.tarifas[cliente] : []; },
-    onClienteChange() { this.opForm.tarifaSel = ''; this.opForm.montoLibre = false; this.opForm.medioViaje = false; this.opForm.monto = null; },
+    onClienteChange() { this.opForm.tarifaSel = ''; this.opForm.medioViaje = false; if (this.opForm.id) { this.opForm.montoLibre = true; return; } this.opForm.montoLibre = false; this.opForm.monto = null; },
     aplicarTarifa() {
       if (this.opForm.tarifaSel === '__otro') { this.opForm.montoLibre = true; this.opForm.tarifaSel = ''; this.opForm.monto = null; this.refreshIcons(); return; }
       const base = Number(this.opForm.tarifaSel) || 0;
@@ -1317,35 +1336,63 @@ function app() {
       this.persist(); this.refreshIcons();
     },
     editOp(o) { this.opError=''; this.opForm = Object.assign({ tarifaSel:'', montoLibre:true, medioViaje:false, cita:false, destinoLibre:false }, JSON.parse(JSON.stringify(o))); this.opForm.montoLibre = true; this.opForm.destinoLibre = !!(o.destino && !this.destinos.includes(o.destino)); this.opModal = true; },
+    async nextViajeNo() {
+      // El número se toma SIEMPRE de la base de datos, para que dos personas no repitan número
+      const { data } = await this.sb.from('operations').select('viaje_no').order('viaje_no', { ascending: false }).limit(1);
+      let n = 0;
+      if (data && data[0] && data[0].viaje_no) { const m = String(data[0].viaje_no).match(/(\d+)/); if (m) n = parseInt(m[1], 10); }
+      return n + 1;
+    },
     saveOp() {
+      if (this.opBusy) return;                     // evita que un doble clic registre el viaje dos veces
       const f = this.opForm;
       if (!f.contenedor || !f.importacion || !f.cliente || !f.monto || f.monto <= 0) { this.opError = 'Completa contenedor, importación, cliente y un monto válido.'; return; }
       if (f.modalidad !== 'viaje_dado' && !f.rotulo) { this.opError = 'Selecciona el rótulo del camión.'; return; }
       if (f.modalidad === 'viaje_dado' && !f.choferExterno) { this.opError = 'Indica el chofer / camión externo.'; return; }
-      if (f.modalidad === 'tercero_recibido' && !this.clients.includes(f.cliente)) { /* cliente externo libre — ok */ }
+      this.opBusy = true; this.opError = '';
       (async () => {
-        if (f.id) {
-          let { data, error } = await this.sb.from('operations').update(this.opToDb(f)).eq('id', f.id).select();
-          if (error && /cita/i.test(error.message || '')) { const p = this.opToDb(f); delete p.cita; ({ data, error } = await this.sb.from('operations').update(p).eq('id', f.id).select()); }
-          if (error || !data || data.length === 0) { this.opError = 'No se pudo guardar: pasadas 2 horas solo el administrador puede editar.'; return; }
-          const idx = this.ops.findIndex(o=>o.id===f.id);
-          if (idx > -1) this.ops.splice(idx,1,this.opFromDb(data[0]));
-        } else {
-          f.viajeNo = 'V-' + String(this.seq).padStart(4,'0');
-          if (f.modalidad === 'tercero_recibido') f.estado = 'N/A';
-          let { data, error } = await this.sb.from('operations').insert(this.opToDb(f)).select();
-          if (error && /cita/i.test(error.message || '')) { const p = this.opToDb(f); delete p.cita; ({ data, error } = await this.sb.from('operations').insert(p).select()); }
-          if (error) { this.opError = 'Error al registrar: ' + error.message; return; }
-          this.seq++;
-          this.ops.push(this.opFromDb(data[0]));
-          if (f.modalidad === 'viaje_dado') {
-            const gasto = { fecha:f.fecha, categoria:'Pago chofer', rotulo:'', descripcion:'Pago a tercero — viaje '+f.viajeNo, detalle:f.choferExterno, metodo:'', responsable:f.choferExterno, monto:Number(f.montoTercero||0), anulado:false };
-            const { data: gd } = await this.sb.from('expenses').insert(gasto).select();
-            if (gd && gd[0]) this.expenses.push(this.expFromDb(gd[0]));
+        try {
+          if (f.id) {
+            let { data, error } = await this.sb.from('operations').update(this.opToDb(f)).eq('id', f.id).select();
+            if (error && /cita/i.test(error.message || '')) { const p = this.opToDb(f); delete p.cita; ({ data, error } = await this.sb.from('operations').update(p).eq('id', f.id).select()); }
+            if (error || !data || data.length === 0) { this.opError = 'No se pudo guardar: pasadas 2 horas solo el administrador puede editar.'; return; }
+            const idx = this.ops.findIndex(o=>o.id===f.id);
+            if (idx > -1) this.ops.splice(idx,1,this.opFromDb(data[0]));
+          } else {
+            // Aviso si el contenedor ya fue registrado
+            const cont = String(f.contenedor).trim();
+            const { data: rep } = await this.sb.from('operations').select('viaje_no,fecha').eq('contenedor', cont).neq('estado','Anulado').limit(1);
+            if (rep && rep.length) {
+              if (!confirm('⚠️ El contenedor ' + cont + ' ya está registrado en el viaje ' + rep[0].viaje_no + ' (' + rep[0].fecha + ').\n\n¿Registrarlo de todas formas?')) { return; }
+            }
+            if (f.modalidad === 'tercero_recibido') f.estado = 'N/A';
+            let data = null, error = null, intento = 0;
+            while (intento < 6) {
+              f.viajeNo = 'V-' + String(await this.nextViajeNo()).padStart(4, '0');
+              ({ data, error } = await this.sb.from('operations').insert(this.opToDb(f)).select());
+              if (error && /cita/i.test(error.message || '')) { const p = this.opToDb(f); delete p.cita; ({ data, error } = await this.sb.from('operations').insert(p).select()); }
+              if (!error) break;
+              if (/duplicate|unique|viaje_no/i.test(error.message || '')) { intento++; continue; }  // otro usuario tomó ese número
+              break;
+            }
+            if (error) { this.opError = 'Error al registrar: ' + error.message; return; }
+            if (!data || !data[0]) { this.opError = 'No se pudo registrar, intenta de nuevo.'; return; }
+            this.ops.push(this.opFromDb(data[0]));
+            this.seq = (parseInt(String(f.viajeNo).replace(/\D/g,''), 10) || 1) + 1;
+            if (f.modalidad === 'viaje_dado') {
+              const gasto = { fecha:f.fecha, categoria:'Pago chofer', rotulo:'', descripcion:'Pago a tercero — viaje '+f.viajeNo, detalle:f.choferExterno, metodo:'', responsable:f.choferExterno, monto:Number(f.montoTercero||0), anulado:false };
+              const { data: gd, error: ge } = await this.sb.from('expenses').insert(gasto).select();
+              if (ge) alert('La operación se guardó, pero no se pudo registrar el pago al tercero: ' + ge.message);
+              else if (gd && gd[0]) this.expenses.push(this.expFromDb(gd[0]));
+            }
+            await this.saveMasters();
           }
-          await this.saveMasters();
+          this.tweenKpis(); this.opModal = false; this.refreshIcons();
+        } catch (e) {
+          this.opError = 'Error inesperado: ' + (e && e.message ? e.message : e);
+        } finally {
+          this.opBusy = false;
         }
-        this.tweenKpis(); this.opModal = false; this.refreshIcons();
       })();
     },
     anularOp(o) {
@@ -1366,11 +1413,14 @@ function app() {
     activeOps() { return this.ops.filter(o => o.estado !== 'Anulado'); },
     gruposCita() {
       const lista = this.filteredOps();
+      const corta = arr => this.verMax && arr.length > this.verMax ? arr.slice(0, this.verMax) : arr;
+      const con = lista.filter(o => o.cita), sin = lista.filter(o => !o.cita);
       return [
-        { key:'con', titulo:'CON CITA', icon:'calendar-check', color:'text-sky-400', vacio:'Ninguna operación con cita.', items: lista.filter(o => o.cita) },
-        { key:'sin', titulo:'SIN CITA', icon:'calendar-x', color:'text-acero/60', vacio:'Ninguna operación sin cita.', items: lista.filter(o => !o.cita) },
+        { key:'con', titulo:'CON CITA', icon:'calendar-check', color:'text-sky-400', vacio:'Ninguna operación con cita.', total: con.length, items: corta(con) },
+        { key:'sin', titulo:'SIN CITA', icon:'calendar-x', color:'text-acero/60', vacio:'Ninguna operación sin cita.', total: sin.length, items: corta(sin) },
       ];
     },
+    hayMasPorVer() { const l = this.filteredOps().length; return this.verMax && l > this.verMax; },
     printOperaciones() {
       const filas = g => g.items.map(o => `<tr><td>${o.viajeNo}</td><td>${o.fecha}</td><td>${o.cita ? 'SÍ' : 'No'}</td><td>${o.contenedor||''}</td><td>${o.importacion||''}</td><td>${o.cliente||''}</td><td>${o.rotulo||'—'}</td><td>${o.destino||''}</td><td>${this.modeLabel(o.modalidad)}</td><td style="text-align:right;">${this.fmt(o.monto)}</td><td style="text-align:right;">${o.retornoVacio?this.fmt(o.monto*0.5):'—'}</td><td>${o.estado}</td></tr>`).join('');
       const cab = '<thead><tr><th>Viaje</th><th>Fecha</th><th>Cita</th><th>Contenedor</th><th>Importación</th><th>Cliente</th><th>Rótulo</th><th>Destino</th><th>Modalidad</th><th>Monto</th><th>Retorno</th><th>Estado</th></tr></thead>';
@@ -1448,6 +1498,7 @@ function app() {
 
     // ---------- gastos ----------
     addFuel() {
+      if (this.fuelBusy) return;
       const f = this.fuelForm;
       if (!f.rotulo || !f.galones || !f.precio) { alert('Gasoil: rótulo, galones y precio son obligatorios.'); return; }
       const viaje = this.ops.find(o=>o.id==f.viajeId);
@@ -1457,25 +1508,32 @@ function app() {
         detalle: f.galones + ' gal × ' + this.fmt(f.precio) + (f.chofer ? ' · Chofer: ' + f.chofer : '') + (f.cooperativa ? ' · ' + f.cooperativa : ''),
         metodo:'', responsable: f.chofer || '', monto: f.galones * f.precio, anulado: false,
       };
+      this.fuelBusy = true;
       (async () => {
-        const { data, error } = await this.sb.from('expenses').insert(gasto).select();
-        if (error) { alert('Error al registrar gasoil: ' + error.message); return; }
-        this.expenses.push(this.expFromDb(data[0]));
-        this.fuelForm = { rotulo:'', galones:null, precio:null, viajeId:'', chofer:'', cooperativa:'', fecha:'' };
-        this.tweenKpis();
+        try {
+          const { data, error } = await this.sb.from('expenses').insert(gasto).select();
+          if (error) { alert('Error al registrar gasoil: ' + error.message); return; }
+          this.expenses.push(this.expFromDb(data[0]));
+          this.fuelForm = { rotulo:'', galones:null, precio:null, viajeId:'', chofer:'', cooperativa:'', fecha:'' };
+          this.tweenKpis();
+        } finally { this.fuelBusy = false; }
       })();
     },
     addExpense() {
+      if (this.expBusy) return;
       const f = this.expForm;
       if (!f.monto || f.monto <= 0) { alert('Gasto: el monto es obligatorio.'); return; }
       const det = [f.metodo ? 'Pago: '+f.metodo : '', f.responsable ? 'Resp.: '+f.responsable : ''].filter(Boolean).join(' · ');
       const gasto = { fecha:new Date().toISOString().slice(0,10), categoria:f.categoria, rotulo:f.rotulo, descripcion:f.descripcion || f.categoria, detalle:det, monto:f.monto, metodo:f.metodo, responsable:f.responsable, anulado:false };
+      this.expBusy = true;
       (async () => {
-        const { data, error } = await this.sb.from('expenses').insert(gasto).select();
-        if (error) { alert('Error al registrar gasto: ' + error.message); return; }
-        this.expenses.push(this.expFromDb(data[0]));
-        this.expForm = { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'' };
-        this.tweenKpis();
+        try {
+          const { data, error } = await this.sb.from('expenses').insert(gasto).select();
+          if (error) { alert('Error al registrar gasto: ' + error.message); return; }
+          this.expenses.push(this.expFromDb(data[0]));
+          this.expForm = { categoria:'Reparaciones', rotulo:'', descripcion:'', monto:null, metodo:'Efectivo', responsable:'' };
+          this.tweenKpis();
+        } finally { this.expBusy = false; }
       })();
     },
     expenseByCategory() {
